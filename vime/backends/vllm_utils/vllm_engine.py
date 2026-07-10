@@ -330,7 +330,7 @@ class VLLMEngine(RayActor):
     def set_weight_version(self, new_version: str):
         self._weight_version = str(new_version)
 
-    def release_memory_occupation(self, level: int = 2):
+    def release_memory_occupation(self, level: int = 1):
         self.flush_cache()
         response = requests.post(f"http://{self.server_host}:{self.server_port}/sleep", params={"level": level})
         response.raise_for_status()
@@ -360,7 +360,8 @@ class VLLMEngine(RayActor):
     def finish_weight_update(self) -> dict:
         return self._make_request("finish_weight_update", {})
 
-    def update_weights_from_disk(self, model_path: str, load_format: str | None = None):
+    def update_weights_from_disk(self, model_path: str, load_format: str | None = None, weight_version: str | None = None):
+        del weight_version
         del load_format
         response = requests.post(
             f"http://{self.server_host}:{self.server_port}/collective_rpc",

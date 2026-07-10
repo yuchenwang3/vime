@@ -100,6 +100,14 @@ def _get_model_provider_func(
         provider.context_parallel_size = args.context_parallel_size
         provider.variable_seq_lengths = args.variable_seq_lengths
         provider.gradient_accumulation_fusion = args.gradient_accumulation_fusion
+        # vime-patch: bridge-built provider ignores CLI recompute flags; the whitelist
+        # above never forwarded them, so activation recompute was silently disabled for
+        # the hybrid model. Forward them so MoELayer.moe_layer_recompute engages.
+        if getattr(args, "recompute_granularity", None) is not None:
+            provider.recompute_granularity = args.recompute_granularity
+            provider.recompute_modules = args.recompute_modules
+            provider.recompute_method = args.recompute_method
+            provider.recompute_num_layers = args.recompute_num_layers
         if hasattr(args, "moe_token_dispatcher_type"):
             provider.moe_token_dispatcher_type = args.moe_token_dispatcher_type
         if getattr(args, "decoder_first_pipeline_num_layers", None) is not None:
@@ -107,6 +115,11 @@ def _get_model_provider_func(
         if getattr(args, "decoder_last_pipeline_num_layers", None) is not None:
             provider.num_layers_in_last_pipeline_stage = args.decoder_last_pipeline_num_layers
         provider.finalize()
+        print(
+            f"[vime-recompute] granularity={getattr(provider, 'recompute_granularity', None)} "
+            f"modules={getattr(provider, 'recompute_modules', None)}",
+            flush=True,
+        )
 
         if role == "critic":
             _original_provide = provider.provide

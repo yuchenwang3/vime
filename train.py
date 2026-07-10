@@ -23,7 +23,10 @@ def train(args):
         ray.get(rollout_manager.onload_weights.remote())
 
     # Always push actor weights to rollout once weights are loaded.
-    actor_model.update_weights()
+    # vime-patch: skip when updates are disabled (engines keep boot weights;
+    # workaround for vllm layerwise-reload corrupting NemotronH).
+    if args.update_weights_interval < 999999:
+        actor_model.update_weights()
 
     if args.check_weight_update_equal:
         ray.get(rollout_manager.check_weights.remote(action="compare"))

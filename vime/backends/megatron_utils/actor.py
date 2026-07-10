@@ -56,6 +56,22 @@ class MegatronTrainRayActor(TrainRayActor):
             self.args = args
             return 0
 
+        # vime-patch: OOM memory-snapshot diagnostics (enable with VIME_MEM_HISTORY=1)
+        import os as _os
+        if _os.environ.get("VIME_MEM_HISTORY"):
+            import torch as _t
+            _t.cuda.memory._record_memory_history(max_entries=150000)
+            def _oom_observer(device, alloc, device_alloc, device_free):
+                try:
+                    _r = _t.distributed.get_rank() if _t.distributed.is_initialized() else -1
+                except Exception:
+                    _r = -2
+                try:
+                    _t.cuda.memory._dump_snapshot(f"/home/accio_data/yuchen/slime_rlvr/memsnap/oom_rank{_r}_dev{device}.pickle")
+                except Exception as _e:
+                    print(f"[memsnap] dump failed: {_e}", flush=True)
+            _t._C._cuda_attach_out_of_memory_observer(_oom_observer)
+
         monkey_patch_torch_dist()
         super().init(args, role, with_ref, with_opd_teacher)
 
@@ -580,6 +596,16 @@ class MegatronTrainRayActor(TrainRayActor):
     @timer
     def update_weights(self) -> None:
         if self.args.debug_train_only or self.args.debug_rollout_only:
+            return
+
+        # vime-patch: frozen rollout weights (off-policy GRPO + TIS). An interval of
+        # >=999999 means "never sync trainer->rollout". Skip the whole path here so it
+        # covers BOTH the initial sync and the per-step call in train.py:92 — otherwise
+        # weight_updater.update_weights() runs the megatron-bridge param all-gather,
+        # which HANGS (NCCL timeout on TP/EP group) with PP>1 on hybrid NemotronH.
+        if getattr(self.args, "update_weights_interval", 1) >= 999999:
+            if dist.get_rank() == 0:
+                logger.info("update_weights_interval>=999999: frozen rollout weights, skipping sync.")
             return
 
         if self.args.use_fault_tolerance:
